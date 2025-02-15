@@ -1,26 +1,23 @@
 "use client";
 
-import { useMemo, ReactNode } from "react";
+import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
+import { WalletModalProvider } from "@solana/wallet-adapter-react-ui"; // ✅ Ensure it's imported
 import { PhantomWalletAdapter } from "@solana/wallet-adapter-wallets";
-import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
-import Solv3Home from "../puzzles/page"; // ✅ Import your main UI
+import { clusterApiUrl } from "@solana/web3.js";
+import React, { useMemo } from "react";
 
-// Explicitly define the prop types
-interface WalletProviderWrapperProps {
-  children: ReactNode;
-}
+const network = WalletAdapterNetwork.Mainnet;
+const endpoint = clusterApiUrl(network);
 
-export default function WalletProviderWrapper({ children }: WalletProviderWrapperProps) {
-  const endpoint = "https://api.mainnet-beta.solana.com";
+export default function WalletContextProvider({ children }: { children: React.ReactNode }) {
   const wallets = useMemo(() => [new PhantomWalletAdapter()], []);
 
   return (
     <ConnectionProvider endpoint={endpoint}>
       <WalletProvider wallets={wallets} autoConnect>
-        <WalletModalProvider>
-          {children} {/* ✅ This should now work properly */}
-          <Solv3Home />
+        <WalletModalProvider> {/* ✅ This MUST wrap everything */}
+          {children}
         </WalletModalProvider>
       </WalletProvider>
     </ConnectionProvider>
