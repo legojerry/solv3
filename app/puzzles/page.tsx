@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
+import { useWallet } from "@solana/wallet-adapter-react";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import { Dialog } from "@headlessui/react";
+import { Connection, PublicKey } from "@solana/web3.js";
 
 // Lazy load Wallet Button to prevent SSR issues
 const WalletMultiButtonDynamic = dynamic(
@@ -23,6 +25,26 @@ function Solv3Home() {
   const [marketCap, setMarketCap] = useState<number | null>(null);
   const [price, setPrice] = useState<number | null>(null);
   const [openedPuzzle, setOpenedPuzzle] = useState<number | null>(null);
+  const [walletAddress] = useState<string | null>(null);
+  const [mintAddress] = useState<string | null>("8YTwudT2oTGQHK6Kv1MZcpbuFYu12iYMDbSKcpREpump");
+  const [insufficientTokensDialogOpen, setInsufficientTokensDialogOpen] = useState(false);
+  const { publicKey, connected } = useWallet();
+
+  // Debugging logs for wallet and mintAddress
+  useEffect(() => {
+    if (!mintAddress) {
+      console.error("Mint address is null or undefined.");
+    }
+
+  }, [mintAddress, publicKey]);
+
+  // Quick log of wallet state
+  useEffect(() => {
+    console.log("Wallet state:", {
+      connected,
+      publicKey: publicKey ? publicKey.toBase58() : "No public key",
+    });
+  }, [connected, publicKey]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -37,7 +59,6 @@ function Solv3Home() {
           if (data?.length > 0) {
             setMarketCap(data[0].marketCap || 0);
             setPrice(parseFloat(data[0].priceUsd) || 0);
-            window.marketCap = data[0].marketCap; // ✅ Store for debugging
             console.log("Updated Market Cap:", data[0].marketCap);
           }
         } catch (error) {
@@ -51,7 +72,46 @@ function Solv3Home() {
     }
   }, []);
 
-  // Updated market caps for each puzzle
+  // Check for wallet holding the required token
+  useEffect(() => {
+    if (publicKey && mintAddress) {
+      const checkTokenBalance = async () => {
+        try {
+		const connection = new Connection("https://solana-mainnet.rpc.extrnode.com/83cd3df0-cd2e-4384-9474-3f93fa02abf0", "confirmed");
+const tokenAccounts = await connection.getParsedTokenAccountsByOwner(publicKey, {
+  programId: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"), // Solana SPL Token Program
+});
+
+if (tokenAccounts.value.length > 0) {
+  const tokenAccount = tokenAccounts.value.find(
+    (account) => account.account.data.parsed.info.mint === mintAddress
+  );
+
+  if (tokenAccount) {
+    const balance = tokenAccount.account.data.parsed.info.tokenAmount.uiAmount;
+    console.log("Token Balance:", balance);
+
+    if (balance < 100000) {
+      console.log("Opening dialog for insufficient tokens...");
+      setInsufficientTokensDialogOpen(true);
+    }
+  } else {
+    console.log("No token account found for this mint.");
+  }
+} else {
+  console.log("No token accounts found for this wallet.");
+}
+
+        } catch (error) {
+          console.error("Error checking token balance:", error);
+        }
+      };
+      checkTokenBalance();
+    } else {
+      console.log("walletAddress or mintAddress is not defined.");
+    }
+  }, [publicKey, mintAddress]);
+
   const puzzles: Puzzle[] = [
     { id: 1, cap: 10000, unlocked: (marketCap ?? 0) >= 10000 },
     { id: 2, cap: 25000, unlocked: (marketCap ?? 0) >= 25000 },
@@ -59,14 +119,9 @@ function Solv3Home() {
     { id: 4, cap: 100000, unlocked: (marketCap ?? 0) >= 100000 },
     { id: 5, cap: 250000, unlocked: (marketCap ?? 0) >= 250000 },
     { id: 6, cap: 500000, unlocked: (marketCap ?? 0) >= 500000 },
-    { id: 7, cap: 750000, unlocked: (marketCap ?? 0) >= 750000 },
-    { id: 8, cap: 1000000, unlocked: (marketCap ?? 0) >= 1000000 },
+    { id: 7, cap: 1000000, unlocked: (marketCap ?? 0) >= 1000000 },
+    { id: 8, cap: 2500000, unlocked: (marketCap ?? 0) >= 2500000 },
   ];
-
-  // Calculate the progress bar width dynamically (between 0% and 100%)
-  const progressBarWidth = marketCap
-    ? Math.min((marketCap / 1000000) * 200, 100)
-    : 0;
 
   return (
     <div className="flex flex-col items-center min-h-screen bg-black text-white p-10 relative">
@@ -92,9 +147,9 @@ function Solv3Home() {
         <div className="w-full bg-gray-800 h-4 mt-2 rounded-full overflow-hidden">
           <motion.div
             className="h-full bg-gradient-to-r from-[#ADFF2F] to-[#00FF00]"
-            style={{ width: `${progressBarWidth}%` }}
+            style={{ width: `${Math.min((marketCap ?? 0) / 1000000 * 200, 100)}%` }}
             initial={{ width: 0 }}
-            animate={{ width: `${progressBarWidth}%` }}
+            animate={{ width: `${Math.min((marketCap ?? 0) / 1000000 * 200, 100)}%` }}
             transition={{ duration: 1 }}
           />
         </div>
@@ -111,12 +166,14 @@ function Solv3Home() {
             >
               <h3 className="text-xl font-bold text-[#6A0DAD]">Puzzle {puzzle.id}</h3>
               <p className="text-[#ADFF2F]">Unlocks at ${puzzle.cap} MC</p>
-              {puzzle.unlocked && (
-                <div className="mt-2 text-gray-400 text-sm">
-                  {/* Here you can add the wallet for the puzzle */}
-                  <p>Wallet Address: XXXXXXXXXXXXXXXXXXXXXXXX</p>
-                </div>
-              )}
+              <a
+                href={`https://solscan.io/address/${walletAddress}`}
+                className="text-blue-500 underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                View Wallet
+              </a>
             </motion.div>
           ))}
         </div>
@@ -132,6 +189,26 @@ function Solv3Home() {
             <p className="text-gray-300 mt-2">This is where the puzzle interaction will go.</p>
             <button
               onClick={() => setOpenedPuzzle(null)}
+              className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded"
+            >
+              Close
+            </button>
+          </div>
+        </Dialog>
+
+        {/* Insufficient Tokens Dialog */}
+        <Dialog
+          open={insufficientTokensDialogOpen}
+          onClose={() => setInsufficientTokensDialogOpen(false)}
+          className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-80"
+        >
+          <div className="bg-gray-900 p-6 rounded-lg w-1/2 text-center">
+            <h2 className="text-2xl font-bold text-[#6A0DAD]">Insufficient Tokens</h2>
+            <p className="text-gray-300 mt-2">
+              You need at least 100,000 $olv3 tokens to participate in this puzzle.
+            </p>
+            <button
+              onClick={() => setInsufficientTokensDialogOpen(false)}
               className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded"
             >
               Close
@@ -171,5 +248,4 @@ function Solv3Home() {
   );
 }
 
-// ✅ Export the Component
 export default Solv3Home;
